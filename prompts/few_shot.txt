@@ -1,0 +1,34 @@
+You are performing FrameNet semantic frame identification.
+
+Choose exactly one frame from the candidate list.
+
+Candidate frames:
+{frame_list}
+
+Examples:
+Sentence: The company hired a new manager.
+Target lexical unit: hired
+Frame: Hiring
+
+Sentence: She bought a laptop yesterday.
+Target lexical unit: bought
+Frame: Commerce_buy
+
+Sentence: The bank abandoned the project.
+Target lexical unit: abandoned
+Frame: Abandonment
+
+Now classify this example.
+
+Sentence:
+{sentence}
+
+Target lexical unit:
+{lexical_unit}
+
+Rules:
+- Choose only from the candidate frames.
+- Return exactly one frame name.
+- Do not explain.
+
+Frame:

@@ -1,0 +1,26 @@
+You are performing FrameNet semantic frame identification.
+
+Choose exactly one frame from the candidate list.
+
+Candidate frames:
+{frame_list}
+
+Relevant retrieved examples:
+{retrieved_examples}
+
+Now classify this sentence.
+
+Sentence:
+{sentence}
+
+Target lexical unit:
+{lexical_unit}
+
+Rules:
+- Use the target lexical unit in context.
+- Use the retrieved examples as guidance.
+- Choose only from the candidate frames.
+- Return exactly one frame name.
+- Do not explain.
+
+Frame:

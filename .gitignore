@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+
+# Experiment outputs / large files
+results/
+data/outputs/
+data/processed/
+wandb/
+runs/
+checkpoints/
+models/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# IDE
+.vscode/
+.idea/

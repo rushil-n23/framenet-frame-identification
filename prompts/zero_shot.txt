@@ -1,0 +1,14 @@
+You are performing FrameNet semantic frame identification.
+
+Possible frames:
+{frame_list}
+
+Sentence:
+{sentence}
+
+Target lexical unit:
+{lexical_unit}
+
+Choose the BEST matching frame.
+
+Return ONLY the frame name.
