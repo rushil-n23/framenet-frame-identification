@@ -1,0 +1,4 @@
+model,condition,exact_accuracy,flat_cluster_accuracy,hierarchy_semantic_accuracy,weighted_semantic_score,semantic_gain_over_exact,unknown_rate,n_examples,semantic_reason_breakdown_percent
+flan_t5_large,guided,0.5525210084033614,0.6355042016806722,0.6355042016806722,0.6189075630252101,0.08298319327731085,0.3161764705882353,952,"{'exact': 55.25, 'unknown': 31.62, 'same_cluster': 8.3, 'unrelated': 4.83}"
+qwen2_5_0_5b_instruct,dynamic_few_shot,0.5903361344537815,0.7384453781512605,0.7384453781512605,0.7088235294117647,0.14810924369747902,0.10504201680672269,952,"{'exact': 59.03, 'unrelated': 15.65, 'same_cluster': 14.81, 'unknown': 10.5}"
+qwen2_5_0_5b_instruct,guided,0.4012605042016807,0.6428571428571429,0.6428571428571429,0.5945378151260504,0.24159663865546221,0.05567226890756303,952,"{'exact': 40.13, 'unrelated': 30.15, 'same_cluster': 24.16, 'unknown': 5.57}"

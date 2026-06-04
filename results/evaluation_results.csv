@@ -1,0 +1,3 @@
+condition,accuracy,precision_macro,recall_macro,f1_macro
+guided,0.6,0.4666666666666666,0.6,0.5
+zero_shot,0.2,0.04,0.2,0.06666666666666667

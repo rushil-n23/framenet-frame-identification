@@ -1,0 +1,13 @@
+{
+  "data_path": "data\\processed\\framenet_processed.csv",
+  "embedding_model": "all-MiniLM-L6-v2",
+  "test_size": 0.2,
+  "random_state": 42,
+  "train_examples": 761,
+  "test_examples": 191,
+  "train_frames": 100,
+  "test_frames": 97,
+  "use_lu_singleton_rule": true,
+  "use_lu_candidate_constraint": true,
+  "fallback_top_k": 15
+}

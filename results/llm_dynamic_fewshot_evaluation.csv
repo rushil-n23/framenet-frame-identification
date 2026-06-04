@@ -1,0 +1,3 @@
+model,condition,accuracy,precision_macro,recall_macro,f1_macro,unknown_rate,n_examples
+flan_t5_large,dynamic_few_shot_lu_rerank,0.175,0.19608465608465606,0.13936507936507936,0.15174418174418175,0.79,200
+qwen2_5_0_5b_instruct,dynamic_few_shot_lu_rerank,0.15,0.1327020202020202,0.08946759259259258,0.08512347991514657,0.06,200

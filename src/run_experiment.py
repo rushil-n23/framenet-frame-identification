@@ -8,31 +8,53 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
+# =========================
+# Paths
+# =========================
+
 DATA_PATH = Path("data/processed/framenet_processed.csv")
 OUTPUT_PATH = Path("data/outputs/all_model_predictions.csv")
 
+
+# =========================
+# Experiment config
+# =========================
+
 # None = full dataset.
+# If Qwen 3B is too slow, set to 200 first.
 MAX_EXAMPLES = None
 
 TOP_K = 15
 DYNAMIC_EXAMPLES = 3
 BATCH_SIZE = 1
+MAX_NEW_TOKENS = 12
+
 
 MODELS = {
-    "flan_t5_large": {
-        "model_name": "google/flan-t5-large",
-        "task": "text2text-generation",
-        "type": "encoder_decoder_instruction_model",
+    "gpt2_large": {
+        "model_name": "openai-community/gpt2-large",
+        "task": "text-generation",
+        "type": "base_causal_lm_774m",
         "conditions": ["guided"],
     },
-    "qwen2_5_0_5b_instruct": {
-        "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+    "qwen2_5_1_5b_instruct": {
+        "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
         "task": "text-generation",
-        "type": "compact_instruction_llm",
-        "conditions": ["guided", "dynamic_few_shot"],
+        "type": "instruction_llm_1_5b",
+        "conditions": ["dynamic_few_shot"],
+    },
+    "qwen2_5_3b_instruct": {
+        "model_name": "Qwen/Qwen2.5-3B-Instruct",
+        "task": "text-generation",
+        "type": "instruction_llm_3b",
+        "conditions": ["dynamic_few_shot"],
     },
 }
 
+
+# =========================
+# Utilities
+# =========================
 
 def clean_text(text):
     return str(text).replace("_", " ").strip()
@@ -43,6 +65,10 @@ def get_allowed_frames(df):
 
 
 def build_frame_texts(df, allowed_frames):
+    """
+    Used only for semantic candidate retrieval.
+    The model prompt receives frame names only.
+    """
     frame_texts = []
 
     for frame in allowed_frames:
@@ -159,6 +185,10 @@ Frame: {ex['gold_frame']}"""
     return "\n\n".join(blocks)
 
 
+# =========================
+# Prompt builders
+# =========================
+
 def build_guided_prompt(row, candidate_frames):
     frame_list = make_candidate_frame_list(candidate_frames)
 
@@ -230,6 +260,10 @@ def build_prompt(condition, row, candidate_frames, dynamic_examples):
     raise ValueError(f"Unknown condition: {condition}")
 
 
+# =========================
+# Output parsing
+# =========================
+
 def extract_generated_text(output):
     if isinstance(output, list):
         if len(output) == 0:
@@ -274,7 +308,7 @@ def clean_prediction(output, candidate_frames):
 
 def batch_predict(generator, model_info, prompts, candidate_frame_batches):
     generation_kwargs = {
-        "max_new_tokens": 12,
+        "max_new_tokens": MAX_NEW_TOKENS,
         "do_sample": False,
         "batch_size": BATCH_SIZE,
     }
@@ -314,6 +348,10 @@ def save_results(results):
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     out_df.to_csv(OUTPUT_PATH, index=False)
 
+
+# =========================
+# Main
+# =========================
 
 def main():
     torch.set_num_threads(4)
@@ -401,6 +439,7 @@ def main():
                 prompts.append(prompt)
                 row_records.append(row)
                 candidate_frame_batches.append(candidate_frames)
+
                 retrieved_example_frames_records.append(
                     "|".join([ex["gold_frame"] for ex in dynamic_examples])
                 )
@@ -472,22 +511,23 @@ def main():
     print("\nSaved predictions to:")
     print(OUTPUT_PATH)
 
-    print("\nCandidate recall:")
-    print(
-        final_df.groupby(["model", "condition"])["gold_in_candidates"]
-        .mean()
-        .reset_index()
-        .to_string(index=False)
-    )
+    if not final_df.empty:
+        print("\nCandidate recall:")
+        print(
+            final_df.groupby(["model", "condition"])["gold_in_candidates"]
+            .mean()
+            .reset_index()
+            .to_string(index=False)
+        )
 
-    print("\nUNKNOWN rate preview:")
-    print(
-        final_df.assign(is_unknown=final_df["prediction"].eq("UNKNOWN"))
-        .groupby(["model", "condition"])["is_unknown"]
-        .mean()
-        .reset_index()
-        .to_string(index=False)
-    )
+        print("\nUNKNOWN rate preview:")
+        print(
+            final_df.assign(is_unknown=final_df["prediction"].eq("UNKNOWN"))
+            .groupby(["model", "condition"])["is_unknown"]
+            .mean()
+            .reset_index()
+            .to_string(index=False)
+        )
 
 
 if __name__ == "__main__":

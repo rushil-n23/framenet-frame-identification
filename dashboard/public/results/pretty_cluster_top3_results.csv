@@ -1,0 +1,10 @@
+Model,Prompt Condition,Exact Accuracy,Cluster Accuracy,Cluster Top-3 Accuracy,Cluster Gain,Cluster Top-3 Gain,UNKNOWN Rate,Examples
+flan_t5_base,few_shot,26.9%,27.4%,34.0%,0.5%,7.1%,36.0%,197
+flan_t5_base,guided,19.8%,19.8%,33.0%,0.0%,13.2%,0.0%,197
+flan_t5_base,zero_shot,18.3%,21.3%,32.0%,3.0%,13.7%,0.0%,197
+flan_t5_large,few_shot,59.9%,67.5%,67.0%,7.6%,7.1%,3.6%,197
+flan_t5_large,guided,59.9%,60.9%,59.9%,1.0%,0.0%,0.0%,197
+flan_t5_large,zero_shot,50.3%,56.3%,55.8%,6.1%,5.6%,1.0%,197
+flan_t5_small,few_shot,5.1%,5.1%,5.6%,0.0%,0.5%,53.3%,197
+flan_t5_small,guided,5.1%,5.1%,5.1%,0.0%,0.0%,69.0%,197
+flan_t5_small,zero_shot,2.5%,2.5%,2.5%,0.0%,0.0%,92.9%,197

@@ -1,0 +1,11 @@
+sentence,lexical_unit,gold_frame,condition,prediction
+The company hired a new manager.,hired,Hiring,zero_shot,Hiring
+She bought a new laptop yesterday.,bought,Commerce_buy,zero_shot,Hiring
+The chef cooked dinner for the guests.,cooked,Apply_heat,zero_shot,Hiring
+The teacher explained the lesson clearly.,explained,Explanation,zero_shot,Hiring
+The athlete won the competition.,won,Win_prize,zero_shot,Hiring
+The company hired a new manager.,hired,Hiring,guided,Hiring
+She bought a new laptop yesterday.,bought,Commerce_buy,guided,Hiring
+The chef cooked dinner for the guests.,cooked,Apply_heat,guided,Apply_heat
+The teacher explained the lesson clearly.,explained,Explanation,guided,Hiring
+The athlete won the competition.,won,Win_prize,guided,Win_prize

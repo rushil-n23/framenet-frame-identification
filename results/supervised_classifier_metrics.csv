@@ -1,0 +1,2 @@
+model,condition,accuracy,precision_macro,recall_macro,f1_macro,unknown_rate,n_examples,gold_in_candidates,lu_singleton_rule_rate,lu_constrained_classifier_rate,global_classifier_rate
+supervised_lu_embedding_classifier,lu_constrained_logreg,0.9790575916230366,0.9759450171821304,0.9742268041237113,0.9711340206185567,0.0,191,0.9947643979057592,0.9162303664921466,0.05759162303664921,0.02617801047120419
