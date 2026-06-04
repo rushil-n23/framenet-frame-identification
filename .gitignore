@@ -9,9 +9,6 @@ env/
 .env
 
 # Experiment outputs / large files
-results/
-data/outputs/
-data/processed/
 wandb/
 runs/
 checkpoints/
