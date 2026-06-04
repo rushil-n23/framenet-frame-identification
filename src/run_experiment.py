@@ -21,7 +21,7 @@ OUTPUT_PATH = Path("data/outputs/all_model_predictions.csv")
 # =========================
 
 # None = full dataset.
-# If Qwen 3B is too slow, set to 200 first.
+# For a quick smoke test, set to 50 first.
 MAX_EXAMPLES = None
 
 TOP_K = 15
@@ -31,23 +31,40 @@ MAX_NEW_TOKENS = 12
 
 
 MODELS = {
-    "gpt2_large": {
-        "model_name": "openai-community/gpt2-large",
-        "task": "text-generation",
-        "type": "base_causal_lm_774m",
-        "conditions": ["guided"],
-    },
     "qwen2_5_1_5b_instruct": {
         "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
         "task": "text-generation",
         "type": "instruction_llm_1_5b",
-        "conditions": ["dynamic_few_shot"],
+        "conditions": ["guided", "dynamic_few_shot"],
+        "trust_remote_code": False,
     },
     "qwen2_5_3b_instruct": {
         "model_name": "Qwen/Qwen2.5-3B-Instruct",
         "task": "text-generation",
         "type": "instruction_llm_3b",
-        "conditions": ["dynamic_few_shot"],
+        "conditions": ["guided", "dynamic_few_shot"],
+        "trust_remote_code": False,
+    },
+    "phi_3_5_mini_instruct": {
+        "model_name": "microsoft/Phi-3.5-mini-instruct",
+        "task": "text-generation",
+        "type": "instruction_llm_3_8b",
+        "conditions": ["guided", "dynamic_few_shot"],
+        "trust_remote_code": True,
+    },
+    "flan_t5_xl": {
+        "model_name": "google/flan-t5-xl",
+        "task": "text2text-generation",
+        "type": "encoder_decoder_instruction_model_3b",
+        "conditions": ["guided", "dynamic_few_shot"],
+        "trust_remote_code": False,
+    },
+    "smollm2_1_7b_instruct": {
+        "model_name": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+        "task": "text-generation",
+        "type": "instruction_llm_1_7b",
+        "conditions": ["guided", "dynamic_few_shot"],
+        "trust_remote_code": False,
     },
 }
 
@@ -65,10 +82,6 @@ def get_allowed_frames(df):
 
 
 def build_frame_texts(df, allowed_frames):
-    """
-    Used only for semantic candidate retrieval.
-    The model prompt receives frame names only.
-    """
     frame_texts = []
 
     for frame in allowed_frames:
@@ -335,11 +348,21 @@ def batch_predict(generator, model_info, prompts, candidate_frame_batches):
 def load_generator(model_info):
     print(f"Loading model: {model_info['model_name']}")
 
+    model_kwargs = {}
+
+    if model_info.get("trust_remote_code", False):
+        model_kwargs["trust_remote_code"] = True
+
+    if torch.cuda.is_available():
+        model_kwargs["torch_dtype"] = torch.float16
+    else:
+        model_kwargs["torch_dtype"] = torch.float32
+
     return pipeline(
         task=model_info["task"],
         model=model_info["model_name"],
         device=0 if torch.cuda.is_available() else -1,
-        torch_dtype=torch.float32,
+        **model_kwargs,
     )
 
 
@@ -504,6 +527,10 @@ def main():
                 save_results(results)
 
             save_results(results)
+
+        del generator
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     final_df = pd.DataFrame(results)
     save_results(results)
