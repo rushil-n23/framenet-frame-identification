@@ -593,10 +593,19 @@ def run_single_experiment(
 
     if resume and PREDICTIONS_PATH.exists():
         existing = pd.read_csv(PREDICTIONS_PATH)
-        existing = existing[
-            (existing["model_key"] == model_key)
-            & (existing["prompting_strategy"] == strategy)
-        ]
+
+        required_cols = {"model_key", "prompting_strategy", "row_id"}
+        if required_cols.issubset(existing.columns):
+            existing = existing[
+                (existing["model_key"] == model_key)
+                & (existing["prompting_strategy"] == strategy)
+            ]
+        else:
+            print(
+                f"Existing predictions file has old schema: {PREDICTIONS_PATH}. "
+                "Ignoring it for resume."
+            )
+            existing = None
 
     done_ids = set()
     if existing is not None and "row_id" in existing.columns:
