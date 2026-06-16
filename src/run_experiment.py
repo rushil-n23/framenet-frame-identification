@@ -2,6 +2,7 @@ import argparse
 import json
 import re
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,13 @@ from transformers import (
 
 
 # =========================
+# Warning cleanup
+# =========================
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+
+# =========================
 # Paths
 # =========================
 
@@ -27,6 +35,7 @@ OUTPUT_DIR = Path("data/outputs")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PREDICTIONS_PATH = OUTPUT_DIR / "all_model_predictions.csv"
+SUMMARY_PATH = OUTPUT_DIR / "prompting_strategy_summary.csv"
 
 
 # =========================
@@ -41,7 +50,6 @@ FEW_SHOT_EXAMPLES = 3
 ONE_SHOT_EXAMPLES = 1
 
 MAX_NEW_TOKENS = 16
-BATCH_SIZE = 1
 
 DEVICE = 0 if torch.cuda.is_available() else -1
 TORCH_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -52,7 +60,7 @@ TORCH_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
 # =========================
 
 MODEL_CONFIGS = {
-    # FLAN / Google
+    # Google / FLAN
     "flan-t5-large": {
         "hf_name": "google/flan-t5-large",
         "type": "seq2seq",
@@ -94,7 +102,7 @@ MODEL_CONFIGS = {
         "chat": True,
     },
 
-    # GPT baselines
+    # GPT baseline
     "gpt2-large": {
         "hf_name": "gpt2-large",
         "type": "causal",
@@ -121,7 +129,7 @@ PROMPTING_STRATEGIES = [
 
 
 # =========================
-# Utilities
+# Basic utilities
 # =========================
 
 def clean_text(x):
@@ -132,6 +140,10 @@ def clean_text(x):
 
 def normalize_frame_name(x):
     return clean_text(x).replace(" ", "_")
+
+
+def safe_lower(x):
+    return str(x).lower().strip()
 
 
 def get_lexical_unit(row):
@@ -145,7 +157,7 @@ def get_sentence(row):
     for col in ["sentence", "text", "example"]:
         if col in row and clean_text(row[col]):
             return clean_text(row[col])
-    raise ValueError("No sentence/text column found.")
+    raise ValueError("No sentence/text/example column found.")
 
 
 def get_gold_frame(row):
@@ -155,33 +167,29 @@ def get_gold_frame(row):
     raise ValueError("No gold_frame/frame/intended_frame column found.")
 
 
-def safe_lower(x):
-    return str(x).lower().strip()
-
-
 def exact_frame_match(text, valid_frames):
     """
-    Extract the predicted frame from raw model output.
-    Tries exact match, substring match, and simple cleanup.
+    Extract a valid frame label from model output.
+    Returns UNKNOWN if no valid frame can be found.
     """
     if text is None:
         return "UNKNOWN"
 
     raw = str(text).strip()
+
     if not raw:
         return "UNKNOWN"
 
-    # Remove common wrappers
     cleaned = raw
     cleaned = cleaned.replace("Frame:", "")
     cleaned = cleaned.replace("Answer:", "")
     cleaned = cleaned.replace("Prediction:", "")
     cleaned = cleaned.strip()
 
-    # Take first line only
+    # usually answer should be first line
     cleaned = cleaned.split("\n")[0].strip()
 
-    # Remove punctuation around label
+    # remove punctuation around answer
     cleaned = re.sub(r"[^A-Za-z0-9_\- ]", "", cleaned).strip()
     cleaned_norm = cleaned.replace(" ", "_")
 
@@ -190,17 +198,17 @@ def exact_frame_match(text, valid_frames):
     if cleaned_norm in valid_set:
         return cleaned_norm
 
-    # Sometimes model writes a sentence containing the frame
+    # case-insensitive exact match
+    lower_to_frame = {f.lower(): f for f in valid_frames}
+    if cleaned_norm.lower() in lower_to_frame:
+        return lower_to_frame[cleaned_norm.lower()]
+
+    # substring frame match
     raw_norm = raw.replace(" ", "_")
     for frame in valid_frames:
         pattern = r"\b" + re.escape(frame) + r"\b"
         if re.search(pattern, raw_norm):
             return frame
-
-    # Case-insensitive match
-    lower_to_frame = {f.lower(): f for f in valid_frames}
-    if cleaned_norm.lower() in lower_to_frame:
-        return lower_to_frame[cleaned_norm.lower()]
 
     for frame in valid_frames:
         if frame.lower() in raw_norm.lower():
@@ -223,8 +231,11 @@ def load_dataset(sample_size=None):
     df["gold_frame"] = df.apply(get_gold_frame, axis=1)
     df["lexical_unit"] = df.apply(get_lexical_unit, axis=1)
 
+    df = df.reset_index(drop=True)
+
     if sample_size is not None:
         df = df.head(sample_size).copy()
+        df = df.reset_index(drop=True)
 
     return df
 
@@ -264,17 +275,30 @@ def build_frame_inventory(df):
 
 def encode_inventory(embedder, frames, frame_texts):
     texts = [frame_texts[f] for f in frames]
+
     embeddings = embedder.encode(
         texts,
         normalize_embeddings=True,
         show_progress_bar=True,
     )
+
     return embeddings
 
 
-def retrieve_candidate_frames(sentence, lexical_unit, frames, frame_embeddings, embedder, top_k=TOP_K):
+def retrieve_candidate_frames(
+    sentence,
+    lexical_unit,
+    frames,
+    frame_embeddings,
+    embedder,
+    top_k=TOP_K,
+):
     query = f"Lexical unit: {lexical_unit}. Sentence: {sentence}"
-    query_emb = embedder.encode([query], normalize_embeddings=True)
+
+    query_emb = embedder.encode(
+        [query],
+        normalize_embeddings=True,
+    )
 
     sims = cosine_similarity(query_emb, frame_embeddings)[0]
     top_indices = np.argsort(sims)[::-1][:top_k]
@@ -292,7 +316,11 @@ def retrieve_candidate_frames_lu_rerank(
     top_k=TOP_K,
 ):
     query = f"Lexical unit: {lexical_unit}. Sentence: {sentence}"
-    query_emb = embedder.encode([query], normalize_embeddings=True)
+
+    query_emb = embedder.encode(
+        [query],
+        normalize_embeddings=True,
+    )
 
     sims = cosine_similarity(query_emb, frame_embeddings)[0]
 
@@ -300,16 +328,17 @@ def retrieve_candidate_frames_lu_rerank(
     boosted_scores = []
 
     for i, frame in enumerate(frames):
-        score = sims[i]
+        score = float(sims[i])
         frame_text = safe_lower(frame_texts[frame])
 
-        # small lexical-unit boost
+        # lexical-unit boost
         if lu and lu in frame_text:
             score += 0.08
 
         boosted_scores.append(score)
 
     top_indices = np.argsort(boosted_scores)[::-1][:top_k]
+
     return [frames[i] for i in top_indices]
 
 
@@ -324,20 +353,22 @@ def retrieve_dynamic_examples(row_idx, df, sentence_embeddings, top_n=DYNAMIC_EX
     top_indices = np.argsort(sims)[::-1][:top_n]
 
     examples = []
+
     for idx in top_indices:
         ex = df.iloc[idx]
-        examples.append({
-            "sentence": ex["sentence"],
-            "lexical_unit": ex["lexical_unit"],
-            "gold_frame": ex["gold_frame"],
-        })
+        examples.append(
+            {
+                "sentence": ex["sentence"],
+                "lexical_unit": ex["lexical_unit"],
+                "gold_frame": ex["gold_frame"],
+            }
+        )
 
     return examples
 
 
 def get_static_examples(df, n):
     examples = []
-
     used_frames = set()
 
     for _, row in df.iterrows():
@@ -346,11 +377,13 @@ def get_static_examples(df, n):
         if frame in used_frames:
             continue
 
-        examples.append({
-            "sentence": row["sentence"],
-            "lexical_unit": row["lexical_unit"],
-            "gold_frame": row["gold_frame"],
-        })
+        examples.append(
+            {
+                "sentence": row["sentence"],
+                "lexical_unit": row["lexical_unit"],
+                "gold_frame": row["gold_frame"],
+            }
+        )
 
         used_frames.add(frame)
 
@@ -382,6 +415,9 @@ def format_examples(examples):
 
 
 def format_candidates(candidates):
+    if not candidates:
+        return ""
+
     return "\n".join([f"- {c}" for c in candidates])
 
 
@@ -469,7 +505,7 @@ def build_prompt(
 
 
 # =========================
-# Model loading/generation
+# Model loading / generation
 # =========================
 
 def load_generation_pipeline(model_key):
@@ -500,7 +536,6 @@ def load_generation_pipeline(model_key):
             "text2text-generation",
             model=model,
             tokenizer=tokenizer,
-            device=DEVICE if not torch.cuda.is_available() else None,
         )
 
     elif model_type == "causal":
@@ -515,11 +550,21 @@ def load_generation_pipeline(model_key):
             "text-generation",
             model=model,
             tokenizer=tokenizer,
-            device=DEVICE if not torch.cuda.is_available() else None,
         )
 
     else:
         raise ValueError(f"Unknown model type: {model_type}")
+
+    # Important: remove sampling defaults from model config.
+    # This prevents warnings like:
+    # do_sample=False but temperature/top_p/top_k are set.
+    if hasattr(gen_pipe.model, "generation_config"):
+        gen_pipe.model.generation_config.do_sample = False
+        gen_pipe.model.generation_config.temperature = None
+        gen_pipe.model.generation_config.top_p = None
+        gen_pipe.model.generation_config.top_k = None
+        gen_pipe.model.generation_config.num_beams = 1
+        gen_pipe.model.generation_config.max_new_tokens = MAX_NEW_TOKENS
 
     return gen_pipe, tokenizer, config
 
@@ -554,28 +599,93 @@ def generate_prediction(gen_pipe, tokenizer, config, prompt):
 
     model_type = config["type"]
 
+    common_kwargs = {
+        "max_new_tokens": MAX_NEW_TOKENS,
+        "do_sample": False,
+        "temperature": None,
+        "top_p": None,
+        "top_k": None,
+    }
+
     if model_type == "seq2seq":
         output = gen_pipe(
             final_prompt,
-            max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=False,
             num_beams=1,
+            **common_kwargs,
         )
+
         return output[0]["generated_text"]
 
     output = gen_pipe(
         final_prompt,
-        max_new_tokens=MAX_NEW_TOKENS,
-        do_sample=False,
         return_full_text=False,
         pad_token_id=tokenizer.eos_token_id,
+        **common_kwargs,
     )
 
     return output[0]["generated_text"]
 
 
 # =========================
-# Running experiments
+# Saving / resume
+# =========================
+
+def save_partial(rows):
+    out_df = pd.DataFrame(rows)
+
+    if out_df.empty:
+        return
+
+    if PREDICTIONS_PATH.exists():
+        existing = pd.read_csv(PREDICTIONS_PATH)
+
+        if existing.empty:
+            combined = out_df
+        else:
+            all_cols = sorted(set(existing.columns).union(set(out_df.columns)))
+
+            existing = existing.reindex(columns=all_cols)
+            out_df = out_df.reindex(columns=all_cols)
+
+            combined = pd.concat([existing, out_df], ignore_index=True)
+
+        combined = combined.drop_duplicates(
+            subset=["row_id", "model_key", "prompting_strategy"],
+            keep="last",
+        )
+    else:
+        combined = out_df
+
+    combined.to_csv(PREDICTIONS_PATH, index=False)
+
+
+def get_done_ids(model_key, strategy, resume=True):
+    if not resume:
+        return set()
+
+    if not PREDICTIONS_PATH.exists():
+        return set()
+
+    try:
+        existing = pd.read_csv(PREDICTIONS_PATH)
+    except Exception:
+        return set()
+
+    required_cols = {"row_id", "model_key", "prompting_strategy"}
+
+    if not required_cols.issubset(existing.columns):
+        return set()
+
+    subset = existing[
+        (existing["model_key"] == model_key)
+        & (existing["prompting_strategy"] == strategy)
+    ]
+
+    return set(subset["row_id"].astype(int).tolist())
+
+
+# =========================
+# Experiment runner
 # =========================
 
 def run_single_experiment(
@@ -589,27 +699,15 @@ def run_single_experiment(
     embedder,
     resume=True,
 ):
-    existing = None
+    done_ids = get_done_ids(
+        model_key=model_key,
+        strategy=strategy,
+        resume=resume,
+    )
 
-    if resume and PREDICTIONS_PATH.exists():
-        existing = pd.read_csv(PREDICTIONS_PATH)
-
-        required_cols = {"model_key", "prompting_strategy", "row_id"}
-        if required_cols.issubset(existing.columns):
-            existing = existing[
-                (existing["model_key"] == model_key)
-                & (existing["prompting_strategy"] == strategy)
-            ]
-        else:
-            print(
-                f"Existing predictions file has old schema: {PREDICTIONS_PATH}. "
-                "Ignoring it for resume."
-            )
-            existing = None
-
-    done_ids = set()
-    if existing is not None and "row_id" in existing.columns:
-        done_ids = set(existing["row_id"].astype(int).tolist())
+    if len(done_ids) >= len(df):
+        print(f"Skipping completed run: model={model_key}, strategy={strategy}")
+        return
 
     gen_pipe, tokenizer, config = load_generation_pipeline(model_key)
 
@@ -622,9 +720,12 @@ def run_single_experiment(
     start_time = time.time()
 
     print(f"\nRunning: model={model_key}, strategy={strategy}, total={total}")
+    print(f"Already completed rows: {len(done_ids)}")
 
     for row_idx, row in df.iterrows():
-        if int(row_idx) in done_ids:
+        row_id = int(row_idx)
+
+        if row_id in done_ids:
             continue
 
         sentence = row["sentence"]
@@ -686,7 +787,7 @@ def run_single_experiment(
                 prompt=prompt,
             )
         except Exception as e:
-            print(f"Generation error at row {row_idx}: {e}")
+            print(f"Generation error at row {row_id}: {e}")
             raw_output = ""
 
         prediction = exact_frame_match(raw_output, frames)
@@ -696,7 +797,7 @@ def run_single_experiment(
             gold_in_candidates = gold_frame in candidates
 
         result = {
-            "row_id": int(row_idx),
+            "row_id": row_id,
             "model_key": model_key,
             "model_name": MODEL_CONFIGS[model_key]["hf_name"],
             "prompting_strategy": strategy,
@@ -711,7 +812,7 @@ def run_single_experiment(
             "candidate_frames": json.dumps(candidates) if candidates is not None else None,
         }
 
-        # carry over useful metadata if present
+        # carry useful metadata
         for col in [
             "domain",
             "is_ambiguous_lu",
@@ -725,37 +826,21 @@ def run_single_experiment(
 
         rows.append(result)
 
-        if len(rows) % 10 == 0:
+        if len(rows) >= 10:
             save_partial(rows)
             rows = []
 
-        if (row_idx + 1) % 25 == 0:
+        if (row_id + 1) % 25 == 0:
             elapsed = time.time() - start_time
             print(
                 f"[{model_key} | {strategy}] "
-                f"{row_idx + 1}/{total} done | elapsed {elapsed / 60:.1f} min"
+                f"{row_id + 1}/{total} rows checked | elapsed {elapsed / 60:.1f} min"
             )
 
     if rows:
         save_partial(rows)
 
     print(f"Finished model={model_key}, strategy={strategy}")
-
-
-def save_partial(rows):
-    out_df = pd.DataFrame(rows)
-
-    if PREDICTIONS_PATH.exists():
-        existing = pd.read_csv(PREDICTIONS_PATH)
-        combined = pd.concat([existing, out_df], ignore_index=True)
-        combined = combined.drop_duplicates(
-            subset=["row_id", "model_key", "prompting_strategy"],
-            keep="last",
-        )
-    else:
-        combined = out_df
-
-    combined.to_csv(PREDICTIONS_PATH, index=False)
 
 
 # =========================
@@ -769,31 +854,47 @@ def summarize_results():
 
     df = pd.read_csv(PREDICTIONS_PATH)
 
+    if df.empty:
+        print("Prediction file is empty.")
+        return
+
+    # ensure booleans
+    df["exact_match"] = df["exact_match"].astype(bool)
+
     summary = (
         df.groupby(["model_key", "prompting_strategy"])
         .agg(
             n=("exact_match", "count"),
             exact_accuracy=("exact_match", "mean"),
             unknown_rate=("prediction", lambda x: (x == "UNKNOWN").mean()),
-            hits_at_k=("gold_in_candidates", lambda x: x.dropna().mean() if x.notna().any() else np.nan),
+            hits_at_k=(
+                "gold_in_candidates",
+                lambda x: x.dropna().astype(bool).mean()
+                if x.notna().any()
+                else np.nan,
+            ),
         )
         .reset_index()
     )
 
-    summary["exact_accuracy"] *= 100
-    summary["unknown_rate"] *= 100
-    summary["hits_at_k"] *= 100
+    summary["exact_accuracy"] = summary["exact_accuracy"] * 100
+    summary["unknown_rate"] = summary["unknown_rate"] * 100
+    summary["hits_at_k"] = summary["hits_at_k"] * 100
 
-    summary_path = OUTPUT_DIR / "prompting_strategy_summary.csv"
-    summary.to_csv(summary_path, index=False)
+    summary = summary.sort_values(
+        ["model_key", "prompting_strategy"],
+        ascending=[True, True],
+    )
+
+    summary.to_csv(SUMMARY_PATH, index=False)
 
     print("\n=== Prompting Strategy Summary ===")
     print(summary.to_string(index=False))
-    print(f"\nSaved summary to {summary_path}")
+    print(f"\nSaved summary to {SUMMARY_PATH}")
 
 
 # =========================
-# Main
+# CLI
 # =========================
 
 def parse_args():
@@ -819,20 +920,34 @@ def parse_args():
         "--sample_size",
         type=int,
         default=None,
-        help="Use only first N examples for quick testing.",
+        help="Use only the first N examples for testing.",
     )
 
     parser.add_argument(
         "--no_resume",
         action="store_true",
-        help="Do not skip already completed model/strategy/row combinations.",
+        help="Do not skip already completed rows.",
     )
 
     return parser.parse_args()
 
 
+# =========================
+# Main
+# =========================
+
 def main():
     args = parse_args()
+
+    print("Host:")
+    try:
+        import socket
+        print(socket.gethostname())
+    except Exception:
+        print("unknown")
+
+    print("CUDA:")
+    print(torch.cuda.is_available())
 
     print("Loading dataset...")
     df = load_dataset(sample_size=args.sample_size)
